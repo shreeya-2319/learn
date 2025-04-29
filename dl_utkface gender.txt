@@ -1,0 +1,133 @@
+import numpy as np
+import os
+import cv2
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.preprocessing.image import img_to_array
+from sklearn.preprocessing import LabelEncoder
+
+# Set path to dataset
+dataset_path = 'path_to_UTKFace_dataset'  # Replace with actual path to your dataset
+
+# Load images and labels
+def load_data(dataset_path):
+    images = []
+    gender_labels = []
+    age_labels = []
+    
+    for filename in os.listdir(dataset_path):
+        # Check if the file is a .jpg image
+        if filename.endswith(".jpg"):
+            # Get age, gender, and ethnicity from filename
+            age, gender, ethnicity = filename.split('_')[:3]
+            
+            # Read image
+            image = cv2.imread(os.path.join(dataset_path, filename))
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # Convert to RGB
+            image = cv2.resize(image, (64, 64))  # Resize image to 64x64 pixels
+            image = img_to_array(image)  # Convert image to array
+            
+            images.append(image)
+            gender_labels.append(gender)
+            age_labels.append(int(age))
+    
+    images = np.array(images)
+    gender_labels = np.array(gender_labels)
+    age_labels = np.array(age_labels)
+    
+    # Normalize the images
+    images = images.astype("float32") / 255.0
+    
+    return images, gender_labels, age_labels
+
+# Load the data
+images, gender_labels, age_labels = load_data(dataset_path)
+
+# Step 3: Split the data into training and testing sets
+X_train, X_test, y_gender_train, y_gender_test, y_age_train, y_age_test = train_test_split(
+    images, gender_labels, age_labels, test_size=0.2, random_state=42
+)
+
+# Encode gender labels (0 = Male, 1 = Female)
+le = LabelEncoder()
+y_gender_train = le.fit_transform(y_gender_train)
+y_gender_test = le.transform(y_gender_test)
+
+# One-hot encode gender labels
+y_gender_train = to_categorical(y_gender_train)
+y_gender_test = to_categorical(y_gender_test)
+
+# Normalize age labels (since age is a continuous value, we can keep it as is or normalize it)
+age_mean = np.mean(y_age_train)
+age_std = np.std(y_age_train)
+y_age_train = (y_age_train - age_mean) / age_std
+y_age_test = (y_age_test - age_mean) / age_std
+
+# Check the shape of the images
+print(f'Image data shape: {X_train.shape}')
+
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Flatten, Dense
+
+# Define the model
+def build_model():
+    # Input layer for the image data
+    input_layer = Input(shape=(64, 64, 3))
+    
+    # Convolutional layers
+    x = Conv2D(32, (3, 3), activation='relu', padding='same')(input_layer)
+    x = MaxPooling2D((2, 2))(x)
+    x = Conv2D(64, (3, 3), activation='relu', padding='same')(x)
+    x = MaxPooling2D((2, 2))(x)
+    x = Conv2D(128, (3, 3), activation='relu', padding='same')(x)
+    x = MaxPooling2D((2, 2))(x)
+    
+    # Flatten the output from convolution layers
+    x = Flatten()(x)
+    
+    # Fully connected layer
+    x = Dense(128, activation='relu')(x)
+    
+    # Output for gender (classification)
+    gender_output = Dense(2, activation='softmax', name='gender')(x)
+    
+    # Output for age (regression)
+    age_output = Dense(1, activation='linear', name='age')(x)
+    
+    # Define the model with two outputs
+    model = Model(inputs=input_layer, outputs=[gender_output, age_output])
+    
+    model.compile(optimizer='adam', 
+                  loss={'gender': 'categorical_crossentropy', 'age': 'mean_squared_error'},
+                  metrics={'gender': 'accuracy', 'age': 'mae'})
+    
+    return model
+
+# Build the model
+model = build_model()
+
+# Summary of the model
+model.summary()
+
+# Step 4: Train the model
+history = model.fit(X_train, {'gender': y_gender_train, 'age': y_age_train},
+                    epochs=10, batch_size=64, 
+                    validation_data=(X_test, {'gender': y_gender_test, 'age': y_age_test}))
+
+# Step 5: Evaluate the model
+loss, gender_loss, age_loss, gender_accuracy, age_mae = model.evaluate(X_test, {'gender': y_gender_test, 'age': y_age_test})
+print(f'Loss: {loss}, Gender Loss: {gender_loss}, Age Loss: {age_loss}')
+print(f'Gender Accuracy: {gender_accuracy}, Age MAE: {age_mae}')
+
+# Predict gender and age for a sample image from the test set
+sample_image = X_test[0].reshape(1, 64, 64, 3)  # Reshape the sample image
+gender_pred, age_pred = model.predict(sample_image)
+
+# Print the predictions
+print(f'Predicted Gender: {le.inverse_transform(np.argmax(gender_pred, axis=1))}')
+print(f'Predicted Age: {age_pred[0]}')
+
+# Reverse the normalization for age
+predicted_age = age_pred * age_std + age_mean
+print(f'Reversed Predicted Age: {predicted_age[0]}')
+
