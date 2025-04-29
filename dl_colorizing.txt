@@ -1,0 +1,44 @@
+pip install tensorflow opencv-python numpy matplotlib
+
+import numpy as np
+import cv2
+import tensorflow as tf
+from tensorflow.keras.models import load_model
+from tensorflow.keras.preprocessing import image
+import matplotlib.pyplot as plt
+
+# Load the model (you can download a pre-trained model from sources like DeOldify or train your own)
+# For the sake of simplicity, we are assuming a pre-trained model is available as 'colorization_model.h5'
+model = load_model('colorization_model.h5')  # Ensure you have the correct path to the model
+
+# Function to preprocess the grayscale image
+def preprocess_image(img_path):
+    img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)  # Load the image as grayscale
+    img = cv2.resize(img, (224, 224))  # Resize the image to fit the model's input size
+    img = np.expand_dims(img, axis=-1)  # Add the color channel dimension (224x224x1)
+    img = np.repeat(img, 3, axis=-1)  # Repeat the grayscale image across 3 color channels
+    img = img.astype("float32") / 255.0  # Normalize the image to [0, 1]
+    img = np.expand_dims(img, axis=0)  # Add batch dimension
+    return img
+
+# Function to postprocess and display the result
+def display_colorized_image(colorized_img):
+    colorized_img = (colorized_img[0] * 255).astype("uint8")  # Scale the pixel values back to [0, 255]
+    plt.imshow(cv2.cvtColor(colorized_img, cv2.COLOR_BGR2RGB))  # Convert BGR to RGB for displaying
+    plt.axis('off')
+    plt.show()
+
+# Main function to colorize the image
+def colorize_image(img_path):
+    # Preprocess the image
+    gray_image = preprocess_image(img_path)
+
+    # Use the model to predict the colorized image
+    colorized_image = model.predict(gray_image)
+
+    # Postprocess and display the colorized image
+    display_colorized_image(colorized_image)
+
+# Example usage
+img_path = 'path_to_your_bw_image.jpg'  # Path to the black and white image
+colorize_image(img_path)
