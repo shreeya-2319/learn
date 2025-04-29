@@ -1,0 +1,84 @@
+pip install yfinance
+pip install matplotlib
+pip install scikit-learn
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import yfinance as yf
+from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, LSTM
+
+# Step 1: Download the Google stock prices (you can also load your own dataset)
+# Download historical stock data of Google from Yahoo Finance
+data = yf.download('GOOG', start='2010-01-01', end='2023-12-31')
+
+# Step 2: Preprocessing the data
+# We only need the 'Close' price for predicting future prices
+data = data[['Close']]
+
+# Plotting the stock price data to visualize it
+plt.figure(figsize=(10, 6))
+plt.plot(data)
+plt.title('Google Stock Price (2010-2023)')
+plt.xlabel('Date')
+plt.ylabel('Close Price (USD)')
+plt.show()
+
+# Step 3: Feature Scaling (Normalization)
+scaler = MinMaxScaler(feature_range=(0, 1))
+scaled_data = scaler.fit_transform(data)
+
+# Step 4: Prepare the data for training the RNN (using 60 previous days' data to predict the next day)
+def create_dataset(data, time_step=60):
+    X, y = [], []
+    for i in range(time_step, len(data)):
+        X.append(data[i-time_step:i, 0])
+        y.append(data[i, 0])
+    return np.array(X), np.array(y)
+
+# Create the dataset
+time_step = 60
+X, y = create_dataset(scaled_data, time_step)
+
+# Reshape X to be 3D [samples, time steps, features] for the RNN input
+X = X.reshape(X.shape[0], X.shape[1], 1)
+
+# Step 5: Split the data into training and testing sets
+train_size = int(len(X) * 0.8)
+X_train, X_test = X[:train_size], X[train_size:]
+y_train, y_test = y[:train_size], y[train_size:]
+
+# Step 6: Build the RNN model (LSTM is commonly used for time series)
+model = Sequential()
+
+# Add an LSTM layer with 50 units and a dropout layer
+model.add(LSTM(units=50, return_sequences=True, input_shape=(X_train.shape[1], 1)))
+model.add(LSTM(units=50, return_sequences=False))
+
+# Add a Dense layer for the output
+model.add(Dense(units=1))
+
+# Compile the model
+model.compile(optimizer='adam', loss='mean_squared_error')
+
+# Step 7: Train the model
+history = model.fit(X_train, y_train, epochs=20, batch_size=32, validation_data=(X_test, y_test))
+
+# Step 8: Predicting the stock prices on the test set
+predicted_stock_price = model.predict(X_test)
+
+# Step 9: Inverse transform to get actual predicted stock prices
+predicted_stock_price = scaler.inverse_transform(predicted_stock_price)
+y_test_actual = scaler.inverse_transform(y_test.reshape(-1, 1))
+
+# Step 10: Visualize the results
+plt.figure(figsize=(10, 6))
+plt.plot(y_test_actual, color='blue', label='Actual Google Stock Price')
+plt.plot(predicted_stock_price, color='red', label='Predicted Google Stock Price')
+plt.title('Google Stock Price Prediction using RNN')
+plt.xlabel('Date')
+plt.ylabel('Stock Price (USD)')
+plt.legend()
+plt.show()
