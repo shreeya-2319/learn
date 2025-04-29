@@ -1,0 +1,109 @@
+import os
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras import layers, models
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+import matplotlib.pyplot as plt
+from matplotlib import image as mpimg
+
+# Paths to your dataset (replace these with your actual paths)
+train_dir = 'path_to_train_directory'  # Change to your train data directory
+valid_dir = 'path_to_validation_directory'  # Change to your validation data directory
+
+# Step 1: Perform basic EDA
+
+# Check the number of classes in the dataset
+train_classes = os.listdir(train_dir)
+print(f"Classes in the dataset: {train_classes}")
+
+# Check the number of samples per class in the training directory
+for class_name in train_classes:
+    class_path = os.path.join(train_dir, class_name)
+    print(f"Class: {class_name}, Number of images: {len(os.listdir(class_path))}")
+
+# Visualize some sample images from the training dataset
+def plot_images_from_class(class_name, num_images=5):
+    class_path = os.path.join(train_dir, class_name)
+    images = os.listdir(class_path)[:num_images]
+    plt.figure(figsize=(12, 12))
+    
+    for i, img_name in enumerate(images):
+        img_path = os.path.join(class_path, img_name)
+        img = mpimg.imread(img_path)
+        plt.subplot(1, num_images, i + 1)
+        plt.imshow(img)
+        plt.title(f"{class_name}")
+        plt.axis('off')
+    
+    plt.show()
+
+# Visualize 5 images from the first class in the dataset
+plot_images_from_class(train_classes[0], 5)
+
+# Step 2: Data Preprocessing and Augmentation
+train_datagen = ImageDataGenerator(
+    rescale=1./255,  # Normalize image pixels to the range [0, 1]
+    rotation_range=40,
+    width_shift_range=0.2,
+    height_shift_range=0.2,
+    shear_range=0.2,
+    zoom_range=0.2,
+    horizontal_flip=True,
+    fill_mode='nearest'
+)
+
+valid_datagen = ImageDataGenerator(rescale=1./255)  # Only rescale for validation
+
+# Load the training and validation data from directories
+train_generator = train_datagen.flow_from_directory(
+    train_dir,
+    target_size=(150, 150),  # Resize images to 150x150
+    batch_size=32,
+    class_mode='categorical'  # Multi-class classification
+)
+
+valid_generator = valid_datagen.flow_from_directory(
+    valid_dir,
+    target_size=(150, 150),
+    batch_size=32,
+    class_mode='categorical'  # Multi-class classification
+)
+
+# Step 3: Build the CNN Model
+model = models.Sequential([
+    layers.Conv2D(32, (3, 3), activation='relu', input_shape=(150, 150, 3)),
+    layers.MaxPooling2D(2, 2),
+    layers.Conv2D(64, (3, 3), activation='relu'),
+    layers.MaxPooling2D(2, 2),
+    layers.Conv2D(128, (3, 3), activation='relu'),
+    layers.MaxPooling2D(2, 2),
+    layers.Flatten(),
+    layers.Dense(512, activation='relu'),
+    layers.Dense(train_generator.num_classes, activation='softmax')  # Output layer: one per class
+])
+
+# Step 4: Compile the Model
+model.compile(optimizer='adam',
+              loss='categorical_crossentropy',
+              metrics=['accuracy'])
+
+# Step 5: Train the Model
+history = model.fit(
+    train_generator,
+    steps_per_epoch=train_generator.samples // train_generator.batch_size,
+    epochs=10,
+    validation_data=valid_generator,
+    validation_steps=valid_generator.samples // valid_generator.batch_size
+)
+
+# Step 6: Visualize training and validation accuracy
+plt.plot(history.history['accuracy'], label='accuracy')
+plt.plot(history.history['val_accuracy'], label='val_accuracy')
+plt.xlabel('Epoch')
+plt.ylabel('Accuracy')
+plt.ylim([0, 1])
+plt.legend(loc='lower right')
+plt.show()
+
+# Step 7: Save the trained model
+model.save('plant_disease_classification_model.h5')
